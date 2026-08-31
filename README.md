@@ -1,11 +1,11 @@
 # Anima 3.8B for Forge Neo
 
 A Forge Neo extension that runs the [Anima 3.8B](https://huggingface.co/lylogummy/Anima-3.8B)
-diffusion model with its **Qwen3.5 4B progressive-cross adapter**, the same
-pairing as the reference ComfyUI workflow.
+diffusion model with its **Qwen3.5 4B conditioning path**, including the
+fixed-strength timestep-aware Semantic Connector v2 release.
 
-The UI is deliberately small: an adapter dropdown, an adapter-strength slider,
-and a switch for putting the negative prompt through the adapter too.
+Bundled v2 checkpoints activate automatically. The adapter dropdown and
+strength controls remain available only as a backup for legacy v1 checkpoints.
 
 ## Requirements
 
@@ -34,13 +34,19 @@ the network.
 
 ### 2. Download the models
 
-From [lylogummy/Anima-3.8B](https://huggingface.co/lylogummy/Anima-3.8B/tree/main):
+For v2, place the combined checkpoint in Forge's checkpoint directory:
 
 | Download this file | Put it here |
 | --- | --- |
-| `difussion_models/Anima-3.8B.safetensors` (7.5 GB) | `models/Stable-diffusion/Anima-3.8B.safetensors` |
+| `Anima-3.8B-v2.safetensors` | `models/Stable-diffusion/Anima-3.8B-v2.safetensors` |
 | `text_encoders/qwen35_4b.safetensors` (4.8 GB) | `models/text_encoder/qwen35_4b.safetensors` |
-| `text_encoders/Anima-3.8B-expanded_adapter.safetensors` (88 MB) | `models/text_encoder/Anima-3.8B-expanded_adapter.safetensors` |
+
+The older separate v1 checkpoint and adapter remain supported:
+
+| Download this file | Put it here |
+| --- | --- |
+| `difussion_models/Anima-3.8B.safetensors` | `models/Stable-diffusion/Anima-3.8B.safetensors` |
+| `text_encoders/Anima-3.8B-expanded_adapter.safetensors` | `models/text_encoder/Anima-3.8B-expanded_adapter.safetensors` |
 
 These two you already have from native Anima — leave them where they are:
 
@@ -53,22 +59,24 @@ All paths are relative to your `sd-webui-forge-neo` folder. If you also run
 ComfyUI, hard-link the big files instead of copying them:
 
 ```bash
-mklink /H "models\Stable-diffusion\Anima-3.8B.safetensors" "C:\path\to\ComfyUI\models\diffusion_models\Anima-3.8B.safetensors"
+mklink /H "models\Stable-diffusion\Anima-3.8B-v2.safetensors" "C:\path\to\ComfyUI\models\diffusion_models\Anima-3.8B-v2.safetensors"
 ```
 
 Restart Forge after copying the files.
 
 ## Use
 
-1. Select the `Anima-3.8B` checkpoint.
+1. Select the `Anima-3.8B-v2` checkpoint.
 2. In Forge's VAE / Text Encoder control, select `qwen_image_vae` and
    `qwen_3_06b_base`, exactly as you would for native Anima.
-3. Expand **Anima 3.8B (Qwen3.5)** and enable it.
-4. Pick the adapter and set **Adapter strength**. `1.0` is the trained
-   strength; `0.0` is plain native Anima.
-5. Optionally tick **Use adapter on negative prompt** to route the negative
-   through Qwen3.5 as well. A separate **Negative adapter strength** slider
-   appears; `0.0` there keeps the negative on native Anima.
+3. Generate normally. Forge detects the bundle metadata and activates v2 even
+   when the extension accordion is collapsed.
+4. Optionally expand **Anima 3.8B (Qwen3.5 / v2)** and enable
+   **Use adapter on negative prompt**. V2 always uses its trained strength of
+   `1.0`.
+
+For a legacy v1 checkpoint, enable the accordion, select its separate adapter,
+and choose the desired strength.
 
 The positive prompt is encoded by both text encoders and fused by the selected
 adapter. The negative prompt stays on native Anima — the reference workflow's
@@ -80,11 +88,33 @@ you stock Anima again without a restart.
 
 ## Notes
 
-- Adapters are discovered by safetensors metadata, not by filename. Supported
-  architecture: `anima_progressive_qwen35_cross_adapter_v1`.
+- V2 bundles are discovered by safetensors metadata, not by filename.
+- Legacy separate adapters use architecture
+  `anima_progressive_qwen35_cross_adapter_v1`.
 - The Qwen3.5 model is found automatically; its filename must contain
   `qwen35_4b`, `qwen3.5-4b`, or `qwen3_5_4b`.
-- Qwen3.5 4B is loaded in addition to Anima's own encoder, so expect the extra
-  VRAM/RAM cost of a 4B model while conditioning is computed.
+- The native encoder and Qwen3.5 are run sequentially and released after their
+  outputs are copied to system RAM. On lower-VRAM systems, Forge can offload
+  text-encoder and connector weights and reload them when a prompt changes.
+- Semantic Connector v2 remains active during every denoising step because its
+  extraction is timestep-aware. Forge manages it as part of the sampling model
+  and can stream/offload its layers when the full model does not fit.
 - Adapter name, strength, and negative strength are written into the generation
   parameters of every image.
+
+## Bundling a newer v2 epoch
+
+The included `bundle_v2.py` validates that the new adapter was trained against
+the native adapter inside the selected DiT, then writes a new combined
+checkpoint. It deliberately refuses to overwrite an existing bundle:
+
+```powershell
+python bundle_v2.py `
+  --base "path\to\Anima-base.safetensors" `
+  --adapter "path\to\expanded_adapter_v2_epXX.safetensors" `
+  --output "models\Stable-diffusion\Anima-3.8B-v2-epXX.safetensors"
+```
+
+Use a new output filename for every release epoch, refresh Forge's checkpoint
+list, and select the new bundle. No code change is needed while the adapter
+architecture and native-adapter hash remain compatible.

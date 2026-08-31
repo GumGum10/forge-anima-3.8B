@@ -6,6 +6,10 @@ from pathlib import Path
 from safetensors import SafetensorError, safe_open
 
 ARCHITECTURE = "anima_progressive_qwen35_cross_adapter_v1"
+V2_ARCHITECTURE = "anima_qwen35_quality_anchored_semantic_connector_v2"
+BUNDLE_ARCHITECTURE = "anima_3_8b_semantic_connector_v2_bundle"
+BUNDLE_FORMAT = "1"
+CONNECTOR_PREFIX = "net.anima_v2_connector."
 
 
 def forge_root() -> Path:
@@ -31,6 +35,20 @@ def qwen35_models() -> dict[str, str]:
             if any(marker in path.name.lower() for marker in markers):
                 found.setdefault(path.name, str(path))
     return dict(sorted(found.items()))
+
+
+def bundle_metadata(path: str | os.PathLike) -> dict[str, str] | None:
+    try:
+        with safe_open(path, framework="pt", device="cpu") as checkpoint:
+            metadata = checkpoint.metadata() or {}
+    except (OSError, ValueError, SafetensorError):
+        return None
+    if (
+        metadata.get("architecture") != BUNDLE_ARCHITECTURE
+        or metadata.get("anima_v2_bundle_format") != BUNDLE_FORMAT
+    ):
+        return None
+    return metadata
 
 
 def adapters() -> dict[str, str]:

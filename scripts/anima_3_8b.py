@@ -27,12 +27,15 @@ class Anima3BScript(scripts.Script):
         choices = list(adapters())
         if not choices:
             choices = ["Anima-3.8B-expanded_adapter.safetensors"]
-        with InputAccordion(False, label="Anima 3.8B (Qwen3.5)") as enabled:
+        with InputAccordion(False, label="Anima 3.8B (Qwen3.5 / v2)") as enabled:
             adapter = gr.Dropdown(
                 label="Adapter",
                 choices=choices,
                 value=choices[0],
-                info="Detected by checkpoint metadata in models/text_encoder.",
+                info=(
+                    "Legacy v1 only. Bundled anima.3-8B-v2 checkpoints "
+                    "activate automatically and ignore this selector."
+                ),
             )
             strength = gr.Slider(
                 label="Adapter strength",
@@ -40,7 +43,7 @@ class Anima3BScript(scripts.Script):
                 maximum=2.0,
                 value=1.0,
                 step=0.05,
-                info="1.0 is trained strength; 0.0 is native Anima.",
+                info="Legacy v1 only; bundled v2 is fixed at trained strength 1.0.",
             )
             negative = gr.Checkbox(
                 label="Use adapter on negative prompt",
@@ -75,34 +78,13 @@ class Anima3BScript(scripts.Script):
         negative_strength: float = 1.0,
         **kwargs,
     ):
-        if not enabled:
+        if not enabled and not self.runtime.is_v2_bundle(p.sd_model):
             return
         self.runtime.install(
             p,
             adapter,
             strength,
             float(negative_strength) if negative else None,
-        )
-
-    def process_before_every_sampling(
-        self,
-        p: StableDiffusionProcessing,
-        enabled: bool,
-        adapter: str,
-        strength: float,
-        negative: bool = False,
-        negative_strength: float = 1.0,
-        **kwargs,
-    ):
-        if not enabled or self.runtime._qwen_clip is None:
-            return
-        unet = p.sd_model.forge_objects.unet
-        required = self.runtime._qwen_clip.patcher.model_size()
-        current = unet.model_options.get(
-            "extra_preserved_memory_during_sampling", 0
-        )
-        unet.model_options["extra_preserved_memory_during_sampling"] = max(
-            current, required
         )
 
     def postprocess(self, p, processed, *args):
